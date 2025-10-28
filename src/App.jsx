@@ -1,35 +1,53 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { useEffect, useState } from "react";
+import Signup from "./pages/Signup";
+import Login from "./pages/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Home from "./pages/Home";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebase";
 
-function App() {
-  const [count, setCount] = useState(0)
+const App = () => {
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Listen to auth state once to avoid flickering
+    const unsubscribe = onAuthStateChanged(auth, () => {
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="animate-pulse text-lg font-semibold tracking-wide">
+          Loading Study Planner...
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
+    <Router>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={<Login />} />
 
-export default App
+        {/* Protected Dashboard */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </Router>
+  );
+};
+
+export default App;
