@@ -1,3 +1,4 @@
+// src/pages/Login.jsx
 import { useState } from "react";
 import {
   signInWithEmailAndPassword,
@@ -6,7 +7,7 @@ import {
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate, Link } from "react-router-dom";
-import { EyeIcon, EyeOffIcon, Mail, Lock, Briefcase } from "lucide-react";
+import { EyeIcon, EyeOffIcon, Mail, Lock, BookOpenCheck } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Login() {
@@ -37,20 +38,20 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black via-neutral-900 to-black flex items-center justify-center px-4 overflow-hidden relative">
-      {/* Soft motion background */}
+    <div className="min-h-screen bg-gradient-to-b from-black via-slate-900 to-black flex items-center justify-center px-4 overflow-hidden relative">
+      {/* Soft glowing gradient background */}
       <motion.div
         initial={{ opacity: 0 }}
-        animate={{ opacity: 0.05 }}
+        animate={{ opacity: 0.07 }}
         transition={{ duration: 2 }}
-        className="absolute inset-0 bg-[radial-gradient(circle_at_center,_white,_transparent_70%)]"
+        className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.5),transparent_70%)] blur-3xl"
       />
 
       <motion.div
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="relative bg-neutral-900 border border-neutral-800 rounded-2xl p-8 w-full max-w-md shadow-[0_0_60px_rgba(255,255,255,0.05)] backdrop-blur-xl"
+        className="relative bg-slate-900/70 border border-slate-800 rounded-2xl p-8 w-full max-w-md shadow-[0_0_60px_rgba(255,255,255,0.05)] backdrop-blur-xl"
       >
         {/* Logo + Title */}
         <motion.div
@@ -59,14 +60,14 @@ export default function Login() {
           transition={{ delay: 0.3 }}
           className="flex flex-col items-center text-center mb-8"
         >
-          <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20 shadow-lg">
-            <Briefcase className="w-8 h-8 text-white" />
+          <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30 shadow-lg">
+            <BookOpenCheck className="w-8 h-8 text-indigo-400" />
           </div>
-          <h1 className="text-4xl font-extrabold text-white mt-4 tracking-tight">
-            Freelance Manager
+          <h1 className="text-3xl font-bold text-white mt-4 tracking-tight">
+            Study Planner & Focus Tracker
           </h1>
-          <p className="text-gray-400 text-base mt-1 font-medium">
-            Track • Clients • Projects • Payments
+          <p className="text-gray-400 text-sm mt-1">
+            Plan smarter • Focus better • Track progress
           </p>
         </motion.div>
 
@@ -92,7 +93,7 @@ export default function Login() {
           <div className="flex-1 h-px bg-gray-700"></div>
         </div>
 
-        {/* Error */}
+        {/* Error Message */}
         {error && (
           <motion.p
             initial={{ opacity: 0 }}
@@ -103,7 +104,7 @@ export default function Login() {
           </motion.p>
         )}
 
-        {/* Form */}
+        {/* Email + Password Form */}
         <motion.form
           onSubmit={handleLogin}
           initial={{ opacity: 0, y: 10 }}
@@ -118,10 +119,10 @@ export default function Login() {
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 h-5 w-5" />
               <input
                 type="email"
-                placeholder="you@freelance.com"
+                placeholder="you@studyplanner.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-black border border-gray-700 pl-10 pr-3 py-2.5 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-white"
+                className="w-full bg-black border border-gray-700 pl-10 pr-3 py-2.5 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 required
               />
             </div>
@@ -137,7 +138,7 @@ export default function Login() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-black border border-gray-700 pl-10 pr-10 py-2.5 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-white"
+                className="w-full bg-black border border-gray-700 pl-10 pr-10 py-2.5 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 required
               />
               <button
@@ -145,11 +146,7 @@ export default function Login() {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-white"
               >
-                {showPassword ? (
-                  <EyeOffIcon className="h-5 w-5" />
-                ) : (
-                  <EyeIcon className="h-5 w-5" />
-                )}
+                {showPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
               </button>
             </div>
           </div>
@@ -159,7 +156,7 @@ export default function Login() {
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.97 }}
             type="submit"
-            className="w-full bg-white text-black py-2.5 rounded-lg font-semibold shadow-md hover:bg-gray-200 transition"
+            className="w-full bg-indigo-500 text-white py-2.5 rounded-lg font-semibold shadow-md hover:bg-indigo-600 transition"
           >
             Sign In
           </motion.button>
@@ -170,7 +167,7 @@ export default function Login() {
           Don’t have an account?{" "}
           <Link
             to="/signup"
-            className="text-white hover:underline font-semibold"
+            className="text-indigo-400 hover:underline font-semibold"
           >
             Create one
           </Link>

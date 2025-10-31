@@ -5,13 +5,13 @@ import { getFirestore } from "firebase/firestore";
 
 // Firebase config
 const firebaseConfig = {
-  apiKey: "AIzaSyAPYrOEYs0Avtw5AiglidvO0AbFOoPEuYw",
-  authDomain: "freelance-project-manage-c1.firebaseapp.com",
-  projectId: "freelance-project-manage-c1",
-  storageBucket: "freelance-project-manage-c1.firebasestorage.app",
-  messagingSenderId: "412368696539",
-  appId: "1:412368696539:web:498d8337eee580547e08fe",
-  measurementId: "G-SSHW65R75N"
+  apiKey: "AIzaSyCtkiUBmNZ7TvbyZUWVcZp1b06TKAmfgyM",
+  authDomain: "study-planner-focus-tracker.firebaseapp.com",
+  projectId: "study-planner-focus-tracker",
+  storageBucket: "study-planner-focus-tracker.firebasestorage.app",
+  messagingSenderId: "51354929545",
+  appId: "1:51354929545:web:ba7e3fcc5a4835a962b958",
+  measurementId: "G-8K6S3FC24C"
 };
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
