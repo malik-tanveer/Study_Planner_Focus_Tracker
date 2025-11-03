@@ -20,7 +20,6 @@ export default function MotivationalQuote() {
     const [currentQuote, setCurrentQuote] = useState(0);
 
     useEffect(() => {
-        // Change quote every 10 seconds
         const interval = setInterval(() => {
             setCurrentQuote((prev) => (prev + 1) % quotes.length);
         }, 10000);
@@ -30,19 +29,20 @@ export default function MotivationalQuote() {
 
     return (
         <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-xl p-4"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-2xl p-4 shadow-md backdrop-blur-sm hover:shadow-lg transition-all duration-300"
         >
             <div className="flex items-center gap-3">
-                <Sparkles className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+                <Sparkles className="w-5 h-5 text-indigo-400 flex-shrink-0 animate-pulse" />
                 <AnimatePresence mode="wait">
                     <motion.p
                         key={currentQuote}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="text-white font-medium text-sm"
+                        transition={{ duration: 0.5 }}
+                        className="text-gray-800 dark:text-gray-200 font-medium text-sm sm:text-base"
                     >
                         {quotes[currentQuote]}
                     </motion.p>
@@ -51,4 +51,3 @@ export default function MotivationalQuote() {
         </motion.div>
     );
 }
-

@@ -13,8 +13,8 @@ export default function Toast({ message, type = "success", onClose }) {
             >
                 <div
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg backdrop-blur-xl border ${type === "success"
-                            ? "bg-green-500/20 border-green-500/30 text-green-400"
-                            : "bg-red-500/20 border-red-500/30 text-red-400"
+                        ? "bg-green-500/20 border-green-500/30 text-green-400"
+                        : "bg-red-500/20 border-red-500/30 text-red-400"
                         }`}
                 >
                     {type === "success" && <CheckCircle2 className="w-5 h-5" />}

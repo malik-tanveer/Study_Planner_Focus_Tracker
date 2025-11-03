@@ -1,22 +1,26 @@
 // Unified Dashboard Page - All sections on one page
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { LogOut, Plus, BookOpen } from "lucide-react";
+import { Plus, BookOpen } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { addSubject, getSubjects, deleteSubject } from "../services/firestoreService";
+import { addSubject, getSubjects, deleteSubject, getTasks } from "../services/firestoreService";
 import SubjectCard from "../components/SubjectCard";
 import PomodoroTimer from "../components/PomodoroTimer";
 import DashboardStats from "../components/DashboardStats";
 import Analytics from "../components/Analytics";
 import MotivationalQuote from "../components/MotivationalQuote";
+import Navbar from "../components/Navbar";
+import { useTheme } from "../context/ThemeContext";
 
 export default function Home() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [subjects, setSubjects] = useState([]);
   const [showAddSubject, setShowAddSubject] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
+  const [newSubjectDescription, setNewSubjectDescription] = useState("");
   const [selectedSubject, setSelectedSubject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0); // For forcing re-renders
@@ -43,11 +47,14 @@ export default function Home() {
 
   const handleAddSubject = async (e) => {
     e.preventDefault();
-    if (!newSubjectName.trim()) return;
+    if (!newSubjectName.trim() || !newSubjectDescription.trim()) {
+      return;
+    }
 
     try {
-      await addSubject(user.uid, newSubjectName);
+      await addSubject(user.uid, newSubjectName, false, newSubjectDescription);
       setNewSubjectName("");
+      setNewSubjectDescription("");
       setShowAddSubject(false);
       loadSubjects();
       setRefreshKey((prev) => prev + 1); // Trigger stats refresh
@@ -79,51 +86,70 @@ export default function Home() {
     }
   };
 
-  const handleSessionComplete = () => {
-    // Trigger refresh when session completes
-    setRefreshKey((prev) => prev + 1);
-    loadSubjects(); // Refresh subjects to update task stats
-  };
+  const [subjectCompletionStatus, setSubjectCompletionStatus] = useState({});
+  // Check subject completion status
+  useEffect(() => {
+    const checkSubjectCompletion = async () => {
+      if (!user || !subjects?.length) return;
 
+      const statusMap = {};
+      for (const subject of subjects) {
+        try {
+          const tasks = (await getTasks(user.uid, subject.id)) || []; // Ensure tasks is always an array
+          const totalTasks = tasks.length;
+          const completedTasks = tasks.filter((t) => t?.completed || t?.status === "completed").length;
+
+          statusMap[subject.id] = {
+            isCompleted: totalTasks > 0 && completedTasks === totalTasks,
+            totalTasks,
+            completedTasks,
+          };
+        } catch (error) {
+          console.error(`Error checking completion for subject ${subject.id}:`, error);
+          statusMap[subject.id] = { isCompleted: false, totalTasks: 0, completedTasks: 0 };
+        }
+      }
+      setSubjectCompletionStatus(statusMap);
+    };
+
+    checkSubjectCompletion();
+  }, [subjects, user, refreshKey]);
+
+  // Separate completed and active subjects safely
+  const activeSubjects = (subjects || []).filter((subject) => {
+    const status = subjectCompletionStatus[subject.id];
+    return !status || !status.isCompleted;
+  });
+
+  const completedSubjects = (subjects || []).filter((subject) => {
+    const status = subjectCompletionStatus[subject.id];
+    return status && status.isCompleted;
+  });
+
+  // Session complete handler
+  const handleSessionComplete = () => {
+    setRefreshKey((prev) => prev + 1);
+    loadSubjects();
+  };
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black via-slate-900 to-black text-white">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30">
-                <BookOpen className="w-5 h-5 text-indigo-400" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Study Planner & Focus Tracker</h1>
-                <p className="text-xs text-gray-400">
-                  {user?.displayName || user?.email || "Welcome"}
-                </p>
-              </div>
-            </div>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Logout</span>
-            </motion.button>
-          </div>
-        </div>
-      </header>
+    <div className={`min-h-screen transition-colors duration-300 ${theme === "dark"
+      ? "bg-gradient-to-b from-slate-900 via-slate-900 to-black text-white"
+      : "bg-gradient-to-b from-gray-50 via-white to-gray-100 text-gray-900"
+      }`}>
+      {/* Navbar */}
+      <Navbar onLogout={handleLogout} />
 
       <div className="container mx-auto px-4 py-6 max-w-7xl">
         {/* Motivational Quote */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
+          transition={{ duration: 0.7, ease: "easeOut" }}
+          className="mb-6 w-full max-w-xl mx-auto"
         >
           <MotivationalQuote />
         </motion.div>
+
 
         {/* Dashboard Stats */}
         <motion.div
@@ -144,7 +170,9 @@ export default function Home() {
               transition={{ delay: 0.1 }}
             >
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-white">Subjects & Tasks</h2>
+                <h2 className={`text-2xl font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                  Subjects & Tasks
+                </h2>
               </div>
 
               {/* Add Subject Section */}
@@ -154,7 +182,10 @@ export default function Home() {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setShowAddSubject(true)}
-                    className="flex items-center gap-2 bg-indigo-500 text-white px-6 py-3 rounded-xl font-semibold hover:bg-indigo-600 transition shadow-lg"
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition shadow-lg ${theme === "dark"
+                      ? "bg-indigo-500 text-white hover:bg-indigo-600"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                      }`}
                   >
                     <Plus className="w-5 h-5" />
                     Add New Subject
@@ -165,87 +196,154 @@ export default function Home() {
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
                     onSubmit={handleAddSubject}
-                    className="bg-slate-900/70 border border-slate-800 rounded-xl p-4 backdrop-blur-xl"
+                    className={`rounded-xl p-4 backdrop-blur-xl border ${theme === "dark" ? "bg-slate-900/70 border-slate-800" : "bg-white/80 border-gray-200"
+                      }`}
                   >
-                    <div className="flex gap-3">
+                    <div className="space-y-3">
                       <input
                         type="text"
-                        placeholder="Subject name (e.g., Mathematics, History)"
+                        placeholder="Subject name * (e.g., Mathematics, History)"
                         value={newSubjectName}
                         onChange={(e) => setNewSubjectName(e.target.value)}
-                        className="flex-1 bg-black border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        required
+                        className={`w-full border rounded-lg px-4 py-2 ${theme === "dark"
+                          ? "bg-slate-800 border-slate-700 text-white placeholder-gray-500"
+                          : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                          } focus:outline-none focus:ring-2 focus:ring-indigo-400`}
                         autoFocus
                       />
-                      <motion.button
-                        type="submit"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="bg-indigo-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-600 transition"
-                      >
-                        Add
-                      </motion.button>
-                      <motion.button
-                        type="button"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => {
-                          setShowAddSubject(false);
-                          setNewSubjectName("");
-                        }}
-                        className="bg-slate-700 text-white px-6 py-2 rounded-lg font-semibold hover:bg-slate-600 transition"
-                      >
-                        Cancel
-                      </motion.button>
+                      <textarea
+                        placeholder="Description * (e.g., Core mathematics concepts and problem solving)"
+                        value={newSubjectDescription}
+                        onChange={(e) => setNewSubjectDescription(e.target.value)}
+                        required
+                        rows={3}
+                        className={`w-full border rounded-lg px-4 py-2 ${theme === "dark"
+                          ? "bg-slate-800 border-slate-700 text-white placeholder-gray-500"
+                          : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                          } focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none`}
+                      />
+                      <div className="flex gap-3">
+                        <motion.button
+                          type="submit"
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className={`flex-1 px-6 py-2 rounded-lg font-semibold transition ${theme === "dark" ? "bg-indigo-500 text-white hover:bg-indigo-600" : "bg-indigo-600 text-white hover:bg-indigo-700"
+                            }`}
+                        >
+                          Add
+                        </motion.button>
+                        <motion.button
+                          type="button"
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => {
+                            setShowAddSubject(false);
+                            setNewSubjectName("");
+                            setNewSubjectDescription("");
+                          }}
+                          className={`flex-1 px-6 py-2 rounded-lg font-semibold transition ${theme === "dark" ? "bg-slate-700 text-white hover:bg-slate-600" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            }`}
+                        >
+                          Cancel
+                        </motion.button>
+                      </div>
                     </div>
                   </motion.form>
                 )}
               </div>
 
-              {/* Subjects Grid */}
+              {/* Active Subjects */}
               {loading ? (
-                <div className="text-center py-12 text-gray-500">
+                <div className={`text-center py-12 ${theme === "dark" ? "text-gray-500" : "text-gray-400"}`}>
                   Loading subjects...
                 </div>
-              ) : subjects.length === 0 ? (
+              ) : activeSubjects.length === 0 && completedSubjects.length === 0 ? (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="text-center py-12 bg-slate-900/50 border border-slate-800 rounded-2xl"
+                  className={`text-center py-12 rounded-2xl border backdrop-blur-xl ${theme === "dark" ? "bg-slate-900/50 border-slate-800" : "bg-white/80 border-gray-200"
+                    }`}
                 >
-                  <BookOpen className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400 mb-4">
+                  <BookOpen className={`w-12 h-12 mx-auto mb-4 ${theme === "dark" ? "text-gray-600" : "text-gray-400"}`} />
+                  <p className={`mb-4 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
                     No subjects yet. Create your first subject to get started!
                   </p>
                 </motion.div>
               ) : (
-                <div className="grid grid-cols-1 gap-6">
-                  {subjects.map((subject, index) => (
+                <>
+                  {activeSubjects.length > 0 && (
+                    <div className="grid grid-cols-1 gap-6 mb-8">
+                      {activeSubjects.map((subject, index) => (
+                        <motion.div
+                          key={subject.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                        >
+                          <SubjectCard
+                            subject={subject}
+                            userId={user.uid}
+                            onSelectSubject={setSelectedSubject}
+                            onTaskChange={() => setRefreshKey((prev) => prev + 1)}
+                            // Rules logic
+                            canEdit={true} // always allow edit
+                            canDelete={!subject.completed && (!subject.tasks || subject.tasks.length === 0)}
+                          // delete only if not completed and no tasks added
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Completed Subjects */}
+                  {completedSubjects.length > 0 && (
                     <motion.div
-                      key={subject.id}
                       initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.2 }}
+                      className="mt-8"
                     >
-                      <SubjectCard
-                        subject={subject}
-                        onDeleteSubject={handleDeleteSubject}
-                        userId={user.uid}
-                        onSelectSubject={setSelectedSubject}
-                        onTaskChange={() => setRefreshKey((prev) => prev + 1)}
-                      />
+                      <h3 className={`text-xl font-bold mb-4 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                        Completed Subjects
+                      </h3>
+                      <div className="grid grid-cols-1 gap-6">
+                        {completedSubjects.map((subject, index) => (
+                          <motion.div
+                            key={subject.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.1 }}
+                          >
+                            <SubjectCard
+                              subject={subject}
+                              userId={user.uid}
+                              onSelectSubject={setSelectedSubject}
+                              onTaskChange={() => setRefreshKey((prev) => prev + 1)}
+                              canEdit={true} // edit allowed
+                              canDelete={false} // delete disabled
+                            />
+                          </motion.div>
+                        ))}
+                      </div>
                     </motion.div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </motion.div>
           </div>
+
 
           {/* Focus Timer Section - Takes 1 column */}
           <div className="lg:col-span-1">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
+              transition={{ duration: 0.5, ease: "easeOut", delay: 0.2 }}
+              className="rounded-2xl backdrop-blur-xl border p-4
+               shadow-sm
+               dark:bg-slate-900/50 dark:border-slate-800
+               bg-white/70 border-gray-200"
             >
               <PomodoroTimer
                 selectedSubject={selectedSubject}
@@ -253,6 +351,7 @@ export default function Home() {
               />
             </motion.div>
           </div>
+
         </div>
 
         {/* Analytics Section - Full Width */}

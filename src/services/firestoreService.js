@@ -29,9 +29,10 @@ export const updateUserCounters = async (userId, updates) => {
 };
 
 // ========== SUBJECTS ==========
-export const addSubject = async (userId, subjectName, useForTimer = false) => {
+export const addSubject = async (userId, subjectName, useForTimer = false, description = "") => {
   const subjectData = {
     name: subjectName,
+    description: description || "",
     useForTimer: useForTimer,
     createdAt: serverTimestamp(),
   };

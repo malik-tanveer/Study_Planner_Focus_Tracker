@@ -1,13 +1,18 @@
-// Pomodoro Timer Component
+// Enhanced Pomodoro Timer with Minutes/Seconds Input
 import { useState, useEffect, useRef } from "react";
-import { Play, Pause, RotateCcw, Clock } from "lucide-react";
+import { Play, Pause, RotateCcw, Clock, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import { addSession } from "../services/firestoreService";
+import { useToast } from "./ToastContainer";
 
-export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
+export default function PomodoroTimer({ selectedSubject, onSessionComplete, hideSubjectLabel, onHideSubject }) {
     const { user } = useAuth();
+    const { theme } = useTheme();
+    const { showToast } = useToast();
     const [customMinutes, setCustomMinutes] = useState(25);
+    const [customSeconds, setCustomSeconds] = useState(0);
     const [timeLeft, setTimeLeft] = useState(25 * 60);
     const [isRunning, setIsRunning] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
@@ -41,22 +46,33 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hasCompleted]);
 
-    const handleSessionComplete = async (duration) => {
-        if (user && duration > 0) {
+    const handleSessionComplete = async (durationInSeconds) => {
+        if (user && durationInSeconds > 0) {
             try {
+                const durationMinutes = Math.round(durationInSeconds / 60);
+                const durationSeconds = durationInSeconds % 60;
+                const dateISO = new Date().toISOString().split("T")[0];
+
                 await addSession(user.uid, {
-                    duration: duration, // in seconds
-                    date: new Date().toISOString().split("T")[0], // YYYY-MM-DD
+                    durationMinutes,
+                    durationSeconds,
+                    dateISO,
                     subject: selectedSubject || "General",
                     completed: true,
-                    timestamp: new Date().toISOString(),
                 });
+
+                showToast(
+                    `Focus session completed! ${durationMinutes}m ${durationSeconds > 0 ? durationSeconds + "s" : ""}`,
+                    "success"
+                );
+
                 // Notify parent component to refresh stats
                 if (onSessionComplete) {
                     onSessionComplete();
                 }
             } catch (error) {
                 console.error("Error logging session:", error);
+                showToast("Failed to log session. Will retry when online.", "error");
             }
         }
     };
@@ -75,14 +91,18 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
     const handleReset = () => {
         setIsRunning(false);
         setIsPaused(false);
-        const newDuration = customMinutes * 60;
+        const newDuration = customMinutes * 60 + customSeconds;
         setTimeLeft(newDuration);
         setInitialDuration(newDuration);
         setHasCompleted(false);
     };
 
     const handleSetCustom = () => {
-        const newDuration = customMinutes * 60;
+        const newDuration = customMinutes * 60 + customSeconds;
+        if (newDuration <= 0) {
+            showToast("Duration must be greater than 0", "error");
+            return;
+        }
         setTimeLeft(newDuration);
         setInitialDuration(newDuration);
         setIsRunning(false);
@@ -101,17 +121,37 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-xl"
+            className={`rounded-2xl p-6 border backdrop-blur-xl ${theme === "dark"
+                    ? "bg-slate-900/70 border-slate-800"
+                    : "bg-white/80 border-gray-200"
+                }`}
         >
             <div className="flex items-center gap-2 mb-4">
-                <Clock className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-xl font-semibold text-white">Focus Timer</h3>
+                <Clock className={`w-5 h-5 ${theme === "dark" ? "text-indigo-400" : "text-indigo-600"}`} />
+                <h3 className={`text-xl font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                    Focus Timer
+                </h3>
             </div>
 
             {/* Subject Selection Display */}
-            {selectedSubject && (
-                <div className="mb-4 text-sm text-gray-400">
-                    Focusing on: <span className="text-indigo-400 font-medium">{selectedSubject}</span>
+            {selectedSubject && !hideSubjectLabel && (
+                <div className={`mb-4 text-sm p-2 rounded-lg flex items-center justify-between ${theme === "dark"
+                        ? "bg-indigo-500/20 text-gray-400 border border-indigo-500/30"
+                        : "bg-indigo-50 text-gray-600 border border-indigo-200"
+                    }`}>
+                    <span>
+                        Focusing on: <span className={`font-medium ${theme === "dark" ? "text-indigo-400" : "text-indigo-600"}`}>{selectedSubject}</span>
+                    </span>
+                    {onHideSubject && (
+                        <button
+                            onClick={onHideSubject}
+                            className={`p-1 rounded hover:opacity-70 transition ${theme === "dark" ? "hover:bg-indigo-500/20" : "hover:bg-indigo-100"
+                                }`}
+                            aria-label="Hide subject label"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -125,7 +165,7 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
                         stroke="currentColor"
                         strokeWidth="8"
                         fill="none"
-                        className="text-slate-700"
+                        className={theme === "dark" ? "text-slate-700" : "text-gray-300"}
                     />
                     <motion.circle
                         cx="128"
@@ -134,7 +174,7 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
                         stroke="currentColor"
                         strokeWidth="8"
                         fill="none"
-                        className="text-indigo-500"
+                        className={theme === "dark" ? "text-indigo-500" : "text-indigo-600"}
                         strokeDasharray={`${2 * Math.PI * 120}`}
                         strokeDashoffset={`${2 * Math.PI * 120 * (1 - progress / 100)}`}
                         strokeLinecap="round"
@@ -142,7 +182,7 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
                     />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-5xl font-bold text-white transition-opacity duration-300">
+                    <div className={`text-5xl font-bold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
                         {formatTime(timeLeft)}
                     </div>
                 </div>
@@ -155,7 +195,10 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={handleStart}
-                        className="flex items-center gap-2 bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-600 transition"
+                        className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold transition ${theme === "dark"
+                                ? "bg-indigo-500 text-white hover:bg-indigo-600"
+                                : "bg-indigo-600 text-white hover:bg-indigo-700"
+                            }`}
                     >
                         <Play className="w-5 h-5" />
                         Start
@@ -166,7 +209,10 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={isRunning ? handlePause : handleStart}
-                            className="flex items-center gap-2 bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-600 transition"
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold transition ${theme === "dark"
+                                    ? "bg-indigo-500 text-white hover:bg-indigo-600"
+                                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                                }`}
                         >
                             {isRunning ? (
                                 <>
@@ -184,7 +230,10 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={handleReset}
-                            className="flex items-center gap-2 bg-slate-700 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-slate-600 transition"
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold transition ${theme === "dark"
+                                    ? "bg-slate-700 text-white hover:bg-slate-600"
+                                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                                }`}
                         >
                             <RotateCcw className="w-5 h-5" />
                             Reset
@@ -194,43 +243,83 @@ export default function PomodoroTimer({ selectedSubject, onSessionComplete }) {
             </div>
 
             {/* Custom Duration */}
-            <div className="border-t border-slate-800 pt-4 mt-4">
-                <label className="block text-sm text-gray-400 mb-2">Custom Duration (minutes)</label>
-                <div className="flex gap-2">
-                    <input
-                        type="number"
-                        min="1"
-                        max="60"
-                        value={customMinutes}
-                        onChange={(e) => setCustomMinutes(Number(e.target.value))}
-                        className="flex-1 bg-black border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                        disabled={isRunning}
-                    />
-                    <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleSetCustom}
-                        disabled={isRunning}
-                        className="bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold hover:bg-slate-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Set
-                    </motion.button>
+            <div className={`border-t pt-4 mt-4 ${theme === "dark" ? "border-slate-800" : "border-gray-200"
+                }`}>
+                <label className={`block text-sm mb-2 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+                    Custom Duration
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                        <label className={`block text-xs mb-1 ${theme === "dark" ? "text-gray-500" : "text-gray-600"}`}>
+                            Minutes
+                        </label>
+                        <input
+                            type="number"
+                            min="0"
+                            max="120"
+                            value={customMinutes}
+                            onChange={(e) => setCustomMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                            className={`w-full bg-black border rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-400 ${theme === "dark"
+                                    ? "bg-slate-800 border-slate-700 text-white"
+                                    : "bg-gray-50 border-gray-300 text-gray-900"
+                                }`}
+                            disabled={isRunning}
+                        />
+                    </div>
+                    <div>
+                        <label className={`block text-xs mb-1 ${theme === "dark" ? "text-gray-500" : "text-gray-600"}`}>
+                            Seconds
+                        </label>
+                        <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={customSeconds}
+                            onChange={(e) => setCustomSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                            className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 ${theme === "dark"
+                                    ? "bg-slate-800 border-slate-700 text-white"
+                                    : "bg-gray-50 border-gray-300 text-gray-900"
+                                }`}
+                            disabled={isRunning}
+                        />
+                    </div>
                 </div>
+                <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleSetCustom}
+                    disabled={isRunning}
+                    className={`w-full py-2 rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${theme === "dark"
+                            ? "bg-slate-700 text-white hover:bg-slate-600"
+                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        }`}
+                >
+                    Set Duration
+                </motion.button>
             </div>
 
             {/* Completion Message */}
             <AnimatePresence>
                 {hasCompleted && (
                     <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="mt-4 bg-green-500/20 border border-green-500/30 rounded-lg p-3 text-center"
+                        initial={{ opacity: 0, y: 15, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                        transition={{ duration: 0.4, ease: "easeOut" }}
+                        className="mt-5 p-4 rounded-xl border backdrop-blur-xl 
+                 bg-gradient-to-r from-green-500/15 to-emerald-500/15
+                 border-green-500/30 text-center shadow-sm"
                     >
-                        <p className="text-green-400 font-semibold">🎉 Focus session completed!</p>
+                        <p className="text-green-400 font-semibold text-lg flex items-center justify-center gap-2">
+                            🎯 Focus session completed — Great job staying consistent!
+                        </p>
+                        <p className="text-green-300 text-sm mt-1">
+                            Take a short break and come back stronger 💪
+                        </p>
                     </motion.div>
                 )}
             </AnimatePresence>
+
         </motion.div>
     );
 }

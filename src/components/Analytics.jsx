@@ -1,7 +1,8 @@
 // Analytics Component with Multiple Interactive Charts
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bar, Line, Pie, Doughnut, Radar } from "react-chartjs-2";
+import { ChevronDown } from "lucide-react";
+import { Bar, Line, Pie, Radar } from "react-chartjs-2";
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -16,7 +17,8 @@ import {
     Legend,
 } from "chart.js";
 import { TrendingUp, Calendar, Target, BarChart3, LineChart, PieChart, Activity } from "lucide-react";
-import { getSessions, getTasks } from "../services/firestoreService";
+import { useTheme } from "../context/ThemeContext";
+import { getSessions } from "../services/firestoreService";
 import { getSubjects } from "../services/firestoreService";
 
 // Register Chart.js components
@@ -34,11 +36,11 @@ ChartJS.register(
 );
 
 export default function Analytics({ userId, refreshKey }) {
-    const [focusHoursData, setFocusHoursData] = useState([]);
-    const [taskStats, setTaskStats] = useState({ completed: 0, pending: 0 });
+
+    const { theme } = useTheme();
+    const [focusHoursData, setFocusHoursData] = useState({ labels: [], data: [] });
     const [subjectPerformance, setSubjectPerformance] = useState([]);
-    const [timeRange, setTimeRange] = useState("week");
-    const [viewMode, setViewMode] = useState("weekly"); // weekly, daily, subject
+    const [timeRange, setTimeRange] = useState("day"); // day, month
     const [chartType, setChartType] = useState("bar"); // bar, line, pie, radar
     const [loading, setLoading] = useState(true);
 
@@ -47,7 +49,7 @@ export default function Analytics({ userId, refreshKey }) {
             loadAnalyticsData();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId, timeRange, viewMode, refreshKey]);
+    }, [userId, timeRange, refreshKey]);
 
     // Less aggressive refresh - only every 60 seconds
     useEffect(() => {
@@ -57,7 +59,7 @@ export default function Analytics({ userId, refreshKey }) {
             }, 60000);
             return () => clearInterval(interval);
         }
-    }, [userId, timeRange, viewMode]);
+    }, [userId, timeRange]);
 
     const loadAnalyticsData = async () => {
         try {
@@ -66,18 +68,8 @@ export default function Analytics({ userId, refreshKey }) {
             // Load sessions
             const sessions = await getSessions(userId);
 
-            // Load all subjects and their tasks
+            // Load all subjects
             const subjects = await getSubjects(userId);
-            let allTasks = [];
-            for (const subject of subjects) {
-                const tasks = await getTasks(userId, subject.id);
-                allTasks.push(...tasks);
-            }
-
-            // Calculate task stats
-            const completed = allTasks.filter((t) => t.status === "completed").length;
-            const pending = allTasks.filter((t) => t.status === "pending").length;
-            setTaskStats({ completed, pending });
 
             // Calculate subject-wise performance
             const subjectData = {};
@@ -85,27 +77,19 @@ export default function Analytics({ userId, refreshKey }) {
                 subjectData[subject.name] = {
                     hours: 0,
                     sessions: 0,
-                    tasks: 0,
-                    completedTasks: 0,
                 };
             });
 
-            // Aggregate session data by subject
+            // Aggregate session data by subject - use durationMinutes and durationSeconds
             sessions.forEach((session) => {
                 if (session.subject && subjectData[session.subject]) {
-                    subjectData[session.subject].hours += (session.duration || 0) / 3600;
+                    const minutes = session.durationMinutes || 0;
+                    const seconds = session.durationSeconds || 0;
+                    const totalHours = (minutes + seconds / 60) / 60;
+                    subjectData[session.subject].hours += totalHours;
                     subjectData[session.subject].sessions += 1;
                 }
             });
-
-            // Aggregate task data by subject
-            for (const subject of subjects) {
-                const tasks = await getTasks(userId, subject.id);
-                subjectData[subject.name].tasks = tasks.length;
-                subjectData[subject.name].completedTasks = tasks.filter(
-                    (t) => t.status === "completed"
-                ).length;
-            }
 
             const subjectPerf = Object.keys(subjectData).map((subjectName) => ({
                 subject: subjectName,
@@ -114,76 +98,39 @@ export default function Analytics({ userId, refreshKey }) {
 
             setSubjectPerformance(subjectPerf);
 
-            // Process focus hours data based on view mode
-            if (viewMode === "subject") {
-                // For subject view, we already have the data
-                setFocusHoursData({
-                    labels: subjectPerf.map((s) => s.subject),
-                    data: subjectPerf.map((s) => s.hours),
-                });
-            } else if (viewMode === "daily") {
-                // Daily view - show last 7 days by default
-                const now = new Date();
-                const days = timeRange === "week" ? 7 : timeRange === "month" ? 30 : 365;
-                const dateMap = {};
-                for (let i = days - 1; i >= 0; i--) {
-                    const date = new Date(now);
-                    date.setDate(date.getDate() - i);
-                    const dateStr = date.toISOString().split("T")[0];
-                    dateMap[dateStr] = 0;
-                }
+            // Process focus hours data based on time range (day or month)
+            const now = new Date();
+            const days = timeRange === "day" ? 7 : 30; // Show last 7 days or 30 days
+            const dateMap = {};
 
-                sessions.forEach((session) => {
-                    if (session.date && session.duration) {
-                        const sessionDate = session.date;
-                        if (dateMap.hasOwnProperty(sessionDate)) {
-                            dateMap[sessionDate] += session.duration / 3600;
-                        }
-                    }
-                });
-
-                const labels = Object.keys(dateMap);
-                const data = Object.values(dateMap);
-
-                const formattedLabels = labels.map((label) => {
-                    const date = new Date(label);
-                    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                });
-
-                setFocusHoursData({ labels: formattedLabels, data });
-            } else {
-                // Weekly view - group by week
-                const now = new Date();
-                let days = 7;
-                if (timeRange === "month") days = 30;
-                if (timeRange === "year") days = 365;
-
-                const weekMap = {};
-                for (let i = days - 1; i >= 0; i--) {
-                    const date = new Date(now);
-                    date.setDate(date.getDate() - i);
-                    const weekStart = new Date(date);
-                    weekStart.setDate(date.getDate() - date.getDay());
-                    const weekKey = weekStart.toISOString().split("T")[0];
-                    if (!weekMap[weekKey]) {
-                        weekMap[weekKey] = {
-                            label: `Week ${Math.ceil(date.getDate() / 7)}`,
-                            hours: 0,
-                        };
-                    }
-                    const sessionDate = date.toISOString().split("T")[0];
-                    sessions.forEach((session) => {
-                        if (session.date === sessionDate && session.duration) {
-                            weekMap[weekKey].hours += session.duration / 3600;
-                        }
-                    });
-                }
-
-                const labels = Object.values(weekMap).map((w) => w.label);
-                const data = Object.values(weekMap).map((w) => w.hours);
-
-                setFocusHoursData({ labels, data });
+            for (let i = days - 1; i >= 0; i--) {
+                const date = new Date(now);
+                date.setDate(date.getDate() - i);
+                const dateStr = date.toISOString().split("T")[0];
+                dateMap[dateStr] = 0;
             }
+
+            sessions.forEach((session) => {
+                if (session.dateISO) {
+                    const sessionDate = session.dateISO;
+                    if (dateMap.hasOwnProperty(sessionDate)) {
+                        const minutes = session.durationMinutes || 0;
+                        const seconds = session.durationSeconds || 0;
+                        const totalHours = (minutes + seconds / 60) / 60;
+                        dateMap[sessionDate] += totalHours;
+                    }
+                }
+            });
+
+            const labels = Object.keys(dateMap);
+            const data = Object.values(dateMap);
+
+            const formattedLabels = labels.map((label) => {
+                const date = new Date(label);
+                return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            });
+
+            setFocusHoursData({ labels: formattedLabels, data });
         } catch (error) {
             console.error("Error loading analytics:", error);
         } finally {
@@ -191,17 +138,26 @@ export default function Analytics({ userId, refreshKey }) {
         }
     };
 
-    // Focus Hours Chart Data (Bar/Line/Radar)
+    // Focus Hours Chart Data
     const focusChartData = {
         labels: focusHoursData.labels || [],
         datasets: [
             {
-                label: viewMode === "subject" ? "Hours by Subject" : "Focus Hours",
+                label: "Focus Hours",
                 data: focusHoursData.data || [],
                 backgroundColor:
                     chartType === "radar"
                         ? "rgba(99, 102, 241, 0.2)"
-                        : "rgba(99, 102, 241, 0.8)",
+                        : chartType === "pie"
+                            ? [
+                                "rgba(99, 102, 241, 0.8)",
+                                "rgba(139, 92, 246, 0.8)",
+                                "rgba(59, 130, 246, 0.8)",
+                                "rgba(16, 185, 129, 0.8)",
+                                "rgba(236, 72, 153, 0.8)",
+                                "rgba(251, 191, 36, 0.8)",
+                            ].slice(0, focusHoursData.data?.length || 0)
+                            : "rgba(99, 102, 241, 0.8)",
                 borderColor: "rgba(99, 102, 241, 1)",
                 borderWidth: 2,
                 borderRadius: chartType === "bar" ? 8 : 0,
@@ -212,69 +168,39 @@ export default function Analytics({ userId, refreshKey }) {
         ],
     };
 
-    // Task Chart Data (Pie/Doughnut)
-    const taskChartData = {
-        labels: ["Completed", "Pending"],
-        datasets: [
-            {
-                data: [taskStats.completed, taskStats.pending],
-                backgroundColor: ["rgba(34, 197, 94, 0.8)", "rgba(148, 163, 184, 0.8)"],
-                borderColor: ["rgba(34, 197, 94, 1)", "rgba(148, 163, 184, 1)"],
-                borderWidth: 2,
-            },
-        ],
-    };
-
-    // Subject Performance Radar Chart Data
-    const subjectRadarData = {
-        labels: subjectPerformance.map((s) => s.subject),
-        datasets: [
-            {
-                label: "Hours",
-                data: subjectPerformance.map((s) => s.hours),
-                backgroundColor: "rgba(99, 102, 241, 0.2)",
-                borderColor: "rgba(99, 102, 241, 1)",
-                borderWidth: 2,
-            },
-            {
-                label: "Sessions",
-                data: subjectPerformance.map((s) => s.sessions),
-                backgroundColor: "rgba(34, 197, 94, 0.2)",
-                borderColor: "rgba(34, 197, 94, 1)",
-                borderWidth: 2,
-            },
-            {
-                label: "Completed Tasks",
-                data: subjectPerformance.map((s) => s.completedTasks),
-                backgroundColor: "rgba(236, 72, 153, 0.2)",
-                borderColor: "rgba(236, 72, 153, 1)",
-                borderWidth: 2,
-            },
-        ],
-    };
-
-    // Subject Performance Bar/Line Chart Data
+    // Subject Performance Chart Data
     const subjectChartData = {
         labels: subjectPerformance.map((s) => s.subject),
         datasets: [
             {
                 label: "Focus Hours",
                 data: subjectPerformance.map((s) => s.hours),
-                backgroundColor: "rgba(99, 102, 241, 0.8)",
+                backgroundColor:
+                    chartType === "radar"
+                        ? "rgba(99, 102, 241, 0.2)"
+                        : chartType === "pie"
+                            ? [
+                                "rgba(99, 102, 241, 0.8)",
+                                "rgba(139, 92, 246, 0.8)",
+                                "rgba(59, 130, 246, 0.8)",
+                                "rgba(16, 185, 129, 0.8)",
+                                "rgba(236, 72, 153, 0.8)",
+                                "rgba(251, 191, 36, 0.8)",
+                            ].slice(0, subjectPerformance.length)
+                            : "rgba(99, 102, 241, 0.8)",
                 borderColor: "rgba(99, 102, 241, 1)",
                 borderWidth: 2,
                 borderRadius: chartType === "bar" ? 8 : 0,
-            },
-            {
-                label: "Sessions",
-                data: subjectPerformance.map((s) => s.sessions),
-                backgroundColor: "rgba(34, 197, 94, 0.8)",
-                borderColor: "rgba(34, 197, 94, 1)",
-                borderWidth: 2,
-                borderRadius: chartType === "bar" ? 8 : 0,
+                pointRadius: chartType === "line" || chartType === "radar" ? 4 : undefined,
+                pointBackgroundColor: chartType === "line" ? "rgba(99, 102, 241, 1)" : undefined,
+                fill: chartType === "line" || chartType === "radar" ? true : false,
             },
         ],
     };
+
+    const textColor = theme === "dark" ? "#e2e8f0" : "#1e293b";
+    const gridColor = theme === "dark" ? "rgba(148, 163, 184, 0.1)" : "rgba(148, 163, 184, 0.2)";
+    const bgColor = theme === "dark" ? "rgba(15, 23, 42, 0.9)" : "rgba(255, 255, 255, 0.95)";
 
     const chartOptions = {
         responsive: true,
@@ -282,35 +208,35 @@ export default function Analytics({ userId, refreshKey }) {
         plugins: {
             legend: {
                 labels: {
-                    color: "#e2e8f0",
+                    color: textColor,
                 },
             },
             tooltip: {
-                backgroundColor: "rgba(15, 23, 42, 0.9)",
-                titleColor: "#e2e8f0",
-                bodyColor: "#e2e8f0",
+                backgroundColor: bgColor,
+                titleColor: textColor,
+                bodyColor: textColor,
                 borderColor: "rgba(99, 102, 241, 0.5)",
                 borderWidth: 1,
             },
         },
         scales:
-            chartType !== "radar" && focusHoursData.labels
+            chartType !== "radar" && chartType !== "pie"
                 ? {
                     x: {
-                        ticks: { color: "#94a3b8" },
-                        grid: { color: "rgba(148, 163, 184, 0.1)" },
+                        ticks: { color: textColor },
+                        grid: { color: gridColor },
                     },
                     y: {
-                        ticks: { color: "#94a3b8" },
-                        grid: { color: "rgba(148, 163, 184, 0.1)" },
+                        ticks: { color: textColor },
+                        grid: { color: gridColor },
                         beginAtZero: true,
                     },
                 }
                 : chartType === "radar"
                     ? {
                         r: {
-                            ticks: { color: "#94a3b8", backdropColor: "transparent" },
-                            grid: { color: "rgba(148, 163, 184, 0.1)" },
+                            ticks: { color: textColor, backdropColor: "transparent" },
+                            grid: { color: gridColor },
                             beginAtZero: true,
                         },
                     }
@@ -324,88 +250,58 @@ export default function Analytics({ userId, refreshKey }) {
             legend: {
                 position: "bottom",
                 labels: {
-                    color: "#e2e8f0",
+                    color: textColor,
                     padding: 15,
                 },
             },
             tooltip: {
-                backgroundColor: "rgba(15, 23, 42, 0.9)",
-                titleColor: "#e2e8f0",
-                bodyColor: "#e2e8f0",
+                backgroundColor: bgColor,
+                titleColor: textColor,
+                bodyColor: textColor,
                 borderColor: "rgba(99, 102, 241, 0.5)",
                 borderWidth: 1,
             },
         },
     };
 
-    const renderChart = () => {
-        if (viewMode === "subject" && chartType === "radar") {
-            // Subject-wise Radar Chart
-            return subjectPerformance.length > 0 ? (
-                <Radar data={subjectRadarData} options={chartOptions} />
-            ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">
-                    No subject data yet
-                </div>
-            );
-        } else if (viewMode === "subject") {
-            // Subject-wise Bar/Line Chart
-            return subjectPerformance.length > 0 ? (
-                chartType === "bar" ? (
-                    <Bar data={subjectChartData} options={chartOptions} />
-                ) : (
-                    <Line data={subjectChartData} options={chartOptions} />
-                )
-            ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">
-                    No subject data yet
-                </div>
-            );
-        } else if (chartType === "pie" || chartType === "radar") {
-            // Pie chart for tasks (when view is not subject)
-            return taskStats.completed + taskStats.pending > 0 ? (
-                chartType === "pie" ? (
-                    <Pie data={taskChartData} options={pieOptions} />
-                ) : (
-                    <Radar
-                        data={{
-                            labels: ["Focus Hours", "Completed Tasks", "Total Sessions"],
-                            datasets: [
-                                {
-                                    label: "Performance",
-                                    data: [
-                                        focusHoursData.data?.reduce((a, b) => a + b, 0) || 0,
-                                        taskStats.completed,
-                                        focusHoursData.data?.length || 0,
-                                    ],
-                                    backgroundColor: "rgba(99, 102, 241, 0.2)",
-                                    borderColor: "rgba(99, 102, 241, 1)",
-                                    borderWidth: 2,
-                                },
-                            ],
-                        }}
-                        options={chartOptions}
-                    />
-                )
-            ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">
-                    No data yet
-                </div>
-            );
-        } else {
-            // Bar or Line chart for focus hours
-            return focusHoursData.data && focusHoursData.data.length > 0 ? (
-                chartType === "bar" ? (
-                    <Bar data={focusChartData} options={chartOptions} />
-                ) : (
-                    <Line data={focusChartData} options={chartOptions} />
-                )
-            ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">
-                    No focus sessions yet
-                </div>
-            );
+    const renderFocusHoursChart = () => {
+        if (focusHoursData.data && focusHoursData.data.length > 0) {
+            if (chartType === "bar") {
+                return <Bar data={focusChartData} options={chartOptions} />;
+            } else if (chartType === "line") {
+                return <Line data={focusChartData} options={chartOptions} />;
+            } else if (chartType === "pie") {
+                return <Pie data={focusChartData} options={pieOptions} />;
+            } else if (chartType === "radar") {
+                return <Radar data={focusChartData} options={chartOptions} />;
+            }
         }
+        return (
+            <div className={`h-full flex items-center justify-center ${theme === "dark" ? "text-gray-500" : "text-gray-400"
+                }`}>
+                No focus sessions yet
+            </div>
+        );
+    };
+
+    const renderSubjectPerformanceChart = () => {
+        if (subjectPerformance.length > 0) {
+            if (chartType === "bar") {
+                return <Bar data={subjectChartData} options={chartOptions} />;
+            } else if (chartType === "line") {
+                return <Line data={subjectChartData} options={chartOptions} />;
+            } else if (chartType === "pie") {
+                return <Pie data={subjectChartData} options={pieOptions} />;
+            } else if (chartType === "radar") {
+                return <Radar data={subjectChartData} options={chartOptions} />;
+            }
+        }
+        return (
+            <div className={`h-full flex items-center justify-center ${theme === "dark" ? "text-gray-500" : "text-gray-400"
+                }`}>
+                No subject data yet
+            </div>
+        );
     };
 
     const chartTypeIcons = {
@@ -416,164 +312,130 @@ export default function Analytics({ userId, refreshKey }) {
     };
 
     return (
-        <div className="space-y-6">
-            {/* Controls */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-indigo-400" />
-                    <h3 className="text-xl font-semibold text-white">Analytics</h3>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    {/* View Mode Selector */}
-                    <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
-                        {["weekly", "daily", "subject"].map((mode) => (
-                            <button
-                                key={mode}
-                                onClick={() => setViewMode(mode)}
-                                className={`px-3 py-1 rounded-md text-sm font-medium transition ${viewMode === mode
-                                    ? "bg-indigo-500 text-white"
-                                    : "text-gray-400 hover:text-white hover:bg-slate-700"
+        <>
+            <div className="space-y-6">
+                {/* Controls */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                        <TrendingUp className={`w-5 h-5 ${theme === "dark" ? "text-indigo-400" : "text-indigo-600"}`} />
+                        <h3
+                            className={`text-xl font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"
+                                }`}
+                        >
+                            Analytics
+                        </h3>
+                    </div>
+
+                    {/* Dropdown Controls */}
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/* Time Range Dropdown */}
+                        <div className="relative">
+                            <select
+                                value={timeRange}
+                                onChange={(e) => setTimeRange(e.target.value)}
+                                className={`appearance-none px-4 py-2 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 transition-all
+            ${theme === "dark"
+                                        ? "bg-slate-800 border-slate-700 text-gray-200 focus:ring-indigo-500"
+                                        : "bg-gray-100 border-gray-300 text-gray-700 focus:ring-indigo-600"
                                     }`}
                             >
-                                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Chart Type Selector */}
-                    <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
-                        {["bar", "line", "pie", "radar"].map((type) => {
-                            const Icon = chartTypeIcons[type];
-                            return (
-                                <button
-                                    key={type}
-                                    onClick={() => setChartType(type)}
-                                    className={`px-3 py-1 rounded-md text-sm font-medium transition flex items-center gap-1 ${chartType === type
-                                        ? "bg-indigo-500 text-white"
-                                        : "text-gray-400 hover:text-white hover:bg-slate-700"
-                                        }`}
-                                    title={type.charAt(0).toUpperCase() + type.slice(1)}
-                                >
-                                    <Icon className="w-4 h-4" />
-                                    <span className="hidden sm:inline">
-                                        {type.charAt(0).toUpperCase() + type.slice(1)}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Time Range Selector (only for weekly/daily views) */}
-                    {viewMode !== "subject" && (
-                        <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
-                            {["week", "month", "year"].map((range) => (
-                                <button
-                                    key={range}
-                                    onClick={() => setTimeRange(range)}
-                                    className={`px-3 py-1 rounded-md text-sm font-medium transition ${timeRange === range
-                                        ? "bg-indigo-500 text-white"
-                                        : "text-gray-400 hover:text-white hover:bg-slate-700"
-                                        }`}
-                                >
-                                    {range.charAt(0).toUpperCase() + range.slice(1)}
-                                </button>
-                            ))}
+                                <option value="day">Day</option>
+                                <option value="month">Month</option>
+                            </select>
+                            <ChevronDown
+                                className={`absolute right-3 top-2.5 w-4 h-4 pointer-events-none ${theme === "dark" ? "text-gray-400" : "text-gray-500"
+                                    }`}
+                            />
                         </div>
-                    )}
+
+                        {/* Chart Type Dropdown */}
+                        <div className="relative">
+                            <select
+                                value={chartType}
+                                onChange={(e) => setChartType(e.target.value)}
+                                className={`appearance-none px-4 py-2 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 transition-all
+            ${theme === "dark"
+                                        ? "bg-slate-800 border-slate-700 text-gray-200 focus:ring-indigo-500"
+                                        : "bg-gray-100 border-gray-300 text-gray-700 focus:ring-indigo-600"
+                                    }`}
+                            >
+                                <option value="bar">Bar Chart</option>
+                                <option value="line">Line Chart</option>
+                                <option value="pie">Pie Chart</option>
+                                <option value="radar">Radar Chart</option>
+                            </select>
+                            <ChevronDown
+                                className={`absolute right-3 top-2.5 w-4 h-4 pointer-events-none ${theme === "dark" ? "text-gray-400" : "text-gray-500"
+                                    }`}
+                            />
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            {loading ? (
-                <div className="text-center py-8 text-gray-500">Loading analytics...</div>
-            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Main Chart */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        key={`${chartType}-${viewMode}-${timeRange}`}
-                        className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-xl lg:col-span-2"
+                {/* Chart Section */}
+                {loading ? (
+                    <div
+                        className={`text-center py-8 ${theme === "dark" ? "text-gray-500" : "text-gray-400"
+                            }`}
                     >
-                        <div className="flex items-center gap-2 mb-4">
-                            {viewMode === "subject" ? (
-                                <Target className="w-5 h-5 text-indigo-400" />
-                            ) : (
-                                <Calendar className="w-5 h-5 text-indigo-400" />
-                            )}
-                            <h4 className="text-lg font-semibold text-white">
-                                {viewMode === "subject"
-                                    ? "Subject Performance"
-                                    : viewMode === "daily"
-                                        ? "Daily Focus Hours"
-                                        : "Weekly Focus Hours"}
-                            </h4>
-                        </div>
-                        <div className="h-80">
-                            {renderChart()}
-                        </div>
-                    </motion.div>
-
-                    {/* Tasks Overview Chart */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-xl"
-                    >
-                        <div className="flex items-center gap-2 mb-4">
-                            <Target className="w-5 h-5 text-indigo-400" />
-                            <h4 className="text-lg font-semibold text-white">Tasks Overview</h4>
-                        </div>
-                        <div className="h-64">
-                            {taskStats.completed + taskStats.pending > 0 ? (
-                                <Doughnut data={taskChartData} options={pieOptions} />
-                            ) : (
-                                <div className="h-full flex items-center justify-center text-gray-500">
-                                    No tasks yet
-                                </div>
-                            )}
-                        </div>
-                    </motion.div>
-
-                    {/* Subject Summary */}
-                    {subjectPerformance.length > 0 && (
+                        Loading analytics...
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Focus Hours Chart */}
                         <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2 }}
-                            className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-xl"
+                            key={`focus-${chartType}-${timeRange}`}
+                            className={`rounded-2xl p-6 backdrop-blur-xl border ${theme === "dark"
+                                    ? "bg-slate-900/70 border-slate-800"
+                                    : "bg-white/80 border-gray-200"
+                                }`}
                         >
                             <div className="flex items-center gap-2 mb-4">
-                                <Target className="w-5 h-5 text-indigo-400" />
-                                <h4 className="text-lg font-semibold text-white">Subject Summary</h4>
+                                <Calendar
+                                    className={`w-5 h-5 ${theme === "dark" ? "text-indigo-400" : "text-indigo-600"
+                                        }`}
+                                />
+                                <h4
+                                    className={`text-lg font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"
+                                        }`}
+                                >
+                                    Focus Hours
+                                </h4>
                             </div>
-                            <div className="space-y-3 max-h-64 overflow-y-auto">
-                                {subjectPerformance.map((subject, index) => (
-                                    <div
-                                        key={index}
-                                        className="p-3 bg-slate-800/50 rounded-lg border border-slate-700"
-                                    >
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="font-semibold text-white text-sm">
-                                                {subject.subject}
-                                            </span>
-                                            <span className="text-xs text-gray-400">
-                                                {subject.hours.toFixed(1)}h
-                                            </span>
-                                        </div>
-                                        <div className="flex gap-4 text-xs text-gray-400">
-                                            <span>{subject.sessions} sessions</span>
-                                            <span>
-                                                {subject.completedTasks}/{subject.tasks} tasks
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            <div className="h-80">{renderFocusHoursChart()}</div>
                         </motion.div>
-                    )}
-                </div>
-            )}
-        </div>
+
+                        {/* Subject Performance Chart */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 }}
+                            key={`subject-${chartType}`}
+                            className={`rounded-2xl p-6 backdrop-blur-xl border ${theme === "dark"
+                                    ? "bg-slate-900/70 border-slate-800"
+                                    : "bg-white/80 border-gray-200"
+                                }`}
+                        >
+                            <div className="flex items-center gap-2 mb-4">
+                                <Target
+                                    className={`w-5 h-5 ${theme === "dark" ? "text-indigo-400" : "text-indigo-600"
+                                        }`}
+                                />
+                                <h4
+                                    className={`text-lg font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"
+                                        }`}
+                                >
+                                    Subject Performance
+                                </h4>
+                            </div>
+                            <div className="h-80">{renderSubjectPerformanceChart()}</div>
+                        </motion.div>
+                    </div>
+                )}
+            </div>
+
+        </>
     );
 }

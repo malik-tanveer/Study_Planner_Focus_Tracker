@@ -1,33 +1,27 @@
-// Dashboard Stats Component
+// Dashboard Stats Component - Updated
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Clock, Target, TrendingUp } from "lucide-react";
-import { getSessions } from "../services/firestoreService";
 import { getSubjects } from "../services/firestoreService";
 import { getTasks } from "../services/firestoreService";
+import { useTheme } from "../context/ThemeContext";
 
 export default function DashboardStats({ userId, refreshKey }) {
     const [stats, setStats] = useState({
-        totalSessions: 0,
-        totalHours: 0,
+        totalSubjects: 0,
+        totalFocusMinutes: 0,
         totalTasks: 0,
         completedTasks: 0,
     });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (userId) {
-            loadStats();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (userId) loadStats();
     }, [userId, refreshKey]);
 
-    // Less aggressive refresh - only every 60 seconds for background updates
     useEffect(() => {
         if (userId) {
-            const interval = setInterval(() => {
-                loadStats();
-            }, 60000); // 60 seconds instead of 5 - much less aggressive
+            const interval = setInterval(() => loadStats(), 60000);
             return () => clearInterval(interval);
         }
     }, [userId]);
@@ -35,27 +29,21 @@ export default function DashboardStats({ userId, refreshKey }) {
     const loadStats = async () => {
         try {
             setLoading(true);
-
-            // Load sessions
-            const sessions = await getSessions(userId);
-            const totalHours = sessions.reduce(
-                (sum, session) => sum + (session.duration || 0),
-                0
-            ) / 3600; // Convert to hours
-
-            // Load all subjects and tasks
             const subjects = await getSubjects(userId);
             let allTasks = [];
+            let totalMinutes = 0;
+
             for (const subject of subjects) {
                 const tasks = await getTasks(userId, subject.id);
                 allTasks.push(...tasks);
+                totalMinutes += tasks.reduce((sum, t) => sum + (t.durationMinutes || 0), 0);
             }
 
             const completedTasks = allTasks.filter((t) => t.status === "completed").length;
 
             setStats({
-                totalSessions: sessions.length,
-                totalHours: totalHours.toFixed(1),
+                totalSubjects: subjects.length,
+                totalFocusMinutes: totalMinutes,
                 totalTasks: allTasks.length,
                 completedTasks,
             });
@@ -69,16 +57,16 @@ export default function DashboardStats({ userId, refreshKey }) {
     const statCards = [
         {
             icon: Clock,
-            label: "Total Sessions",
-            value: stats.totalSessions,
+            label: "Total Subjects",
+            value: stats.totalSubjects,
             iconBg: "bg-indigo-500/20",
             iconBorder: "border-indigo-500/30",
             iconColor: "text-indigo-400",
         },
         {
             icon: TrendingUp,
-            label: "Focus Hours",
-            value: `${stats.totalHours}h`,
+            label: "Focus Minutes",
+            value: `${stats.totalFocusMinutes} min`,
             iconBg: "bg-green-500/20",
             iconBorder: "border-green-500/30",
             iconColor: "text-green-400",
@@ -135,4 +123,3 @@ export default function DashboardStats({ userId, refreshKey }) {
         </div>
     );
 }
-
